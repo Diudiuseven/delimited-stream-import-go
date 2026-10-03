@@ -151,6 +151,7 @@ func (p *ParallelImporter) Run(ctx context.Context, ra io.ReaderAt, size int64) 
 // (the last shard runs to EOF) and forwards them to out.
 func (p *ParallelImporter) runShard(ctx context.Context, ra io.ReaderAt, bomLen, logical, start, end int64, last bool, readerCfg ReaderConfig, schema *Schema, out chan<- Record) error {
 	sr := io.NewSectionReader(ra, bomLen+start, logical-start)
+	readerCfg.noBOM = true // shard starts are mid-stream
 	rd, err := NewReader(sr, readerCfg)
 	if err != nil {
 		return err
@@ -337,7 +338,9 @@ func (p *ParallelImporter) validBoundary(ra io.ReaderAt, bomLen, off, logical in
 		return true
 	}
 	sr := io.NewSectionReader(ra, bomLen+off, logical-off)
-	rd, err := NewReader(sr, p.cfg.Reader)
+	cfg := p.cfg.Reader
+	cfg.noBOM = true
+	rd, err := NewReader(sr, cfg)
 	if err != nil {
 		return false
 	}
@@ -357,8 +360,10 @@ func (p *ParallelImporter) validBoundary(ra io.ReaderAt, bomLen, off, logical in
 }
 
 // readOneRecord parses a single record starting at absolute offset abs.
+// abs is always past any BOM, so BOM stripping is disabled.
 func readOneRecord(ra io.ReaderAt, abs, length int64, cfg ReaderConfig) (Record, error) {
 	sr := io.NewSectionReader(ra, abs, length)
+	cfg.noBOM = true
 	rd, err := NewReader(sr, cfg)
 	if err != nil {
 		return Record{}, err

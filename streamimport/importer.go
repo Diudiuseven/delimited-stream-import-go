@@ -99,13 +99,12 @@ func (im *Importer) Progress() *Progress { return im.progress }
 // committed records, never skips uncommitted ones, and never observes
 // a half-written batch.
 func (im *Importer) Run(ctx context.Context, r io.Reader) error {
-	return im.run(ctx, r, 0)
+	return im.run(ctx, r)
 }
 
-// run processes the stream; resumeFrom > 0 skips that many bytes first
-// (the caller must position r accordingly or pass a fresh reader and
-// rely on skipBytes).
-func (im *Importer) run(ctx context.Context, r io.Reader, resumeFrom int64) error {
+// run processes the stream, resuming from the checkpoint when a store
+// is configured.
+func (im *Importer) run(ctx context.Context, r io.Reader) error {
 	cfg := im.cfg
 	var startCp Checkpoint
 	if cfg.Store != nil {
@@ -115,15 +114,20 @@ func (im *Importer) run(ctx context.Context, r io.Reader, resumeFrom int64) erro
 		}
 		startCp = cp
 	}
+	resumed := false
 	if startCp.Offset > 0 {
 		skipped, err := skipToOffset(r, startCp.Offset)
 		if err != nil {
 			return fmt.Errorf("streamimport: resume at offset %d: %w", startCp.Offset, err)
 		}
 		r = skipped
+		resumed = true
 	}
 
 	readerCfg := cfg.Reader
+	// Mid-stream starts must not strip a BOM: the bytes at the resume
+	// offset are record content, not a file header.
+	readerCfg.noBOM = resumed
 	// Wire lenient-mode error reporting through the progress counters.
 	userOnError := readerCfg.OnError
 	readerCfg.OnError = func(err error) {

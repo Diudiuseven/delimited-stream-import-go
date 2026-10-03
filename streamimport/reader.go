@@ -34,6 +34,11 @@ type ReaderConfig struct {
 	// OnError, if non-nil, is invoked with each recoverable record
 	// error that was skipped in lenient mode.
 	OnError func(err error)
+
+	// noBOM disables BOM stripping. Set internally when the reader
+	// starts at a mid-stream offset (resume / shard boundary), where
+	// leading bytes must never be mistaken for a BOM.
+	noBOM bool
 }
 
 const readerBufSize = 64 * 1024
@@ -76,8 +81,10 @@ func NewReader(r io.Reader, cfg ReaderConfig) (*Reader, error) {
 	}
 	br := bufio.NewReaderSize(r, readerBufSize)
 	rd := &Reader{br: br, cfg: cfg, d: cfg.Dialect}
-	if err := rd.stripBOM(); err != nil {
-		return nil, err
+	if !cfg.noBOM {
+		if err := rd.stripBOM(); err != nil {
+			return nil, err
+		}
 	}
 	return rd, nil
 }
